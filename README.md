@@ -12,8 +12,8 @@ uv run main.py ./data/search_ua_params.csv
 6. Press ENTER in terminal
 
 # Todo/Issues
-[ ] **IMPORTANT fix issue with language...** Interface in google defined (your local) language
+- [ ] **IMPORTANT fix issue with language...** Interface in google defined (your local) language
   - important cuz results are in english language... not native... for the results
-[ ] upload automaticaly tampermonkey extension... tried but something isnt working
+- [ ] upload automaticaly tampermonkey extension... tried but something isnt working
   - if it would be fixed > think about how to preload an userscript.
-[ ] fix a lil bit script to skip steps 4,5
+- [ ] fix a lil bit script to skip steps 4,5
