@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from camoufox import DefaultAddons
+from camoufox.addons import DefaultAddons
+
+# from camoufox.addons import download_and_extract
+# TAMPER = "https://addons.mozilla.org/firefox/downloads/file/4624137/tampermonkey-5.4.1.xpi"
 
 
 @dataclass
@@ -133,10 +136,15 @@ class GoogleMapsScraper:
       except Exception as e:
         print(f"Could not load profile: {e}")
 
-    # Start Camoufox
+    # Start Camoufox with addons (use absolute paths for local addons)
+    import os
+
+    addon_paths = [
+      os.path.abspath("extensions/tampermonkey-5.4.1"),
+      os.path.abspath("extensions/ether_metamask-13.14.2"),
+    ]
     self.camoufox = Camoufox(
-      addons=["./extensions/tampermonkey"],
-      exclude_addons=[DefaultAddons.UBO],
+      addons=addon_paths,
       headless=self.headless,
       humanize=True,
       os=["macos", "windows", "linux"],
