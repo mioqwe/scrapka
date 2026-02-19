@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+camoufox_profile
 
 # Virtual environments
 .venv

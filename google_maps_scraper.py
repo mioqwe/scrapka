@@ -9,9 +9,11 @@ from pathlib import Path
 from typing import Optional
 
 from camoufox.addons import DefaultAddons
+from dotenv import load_dotenv
 
 # from camoufox.addons import download_and_extract
 # TAMPER = "https://addons.mozilla.org/firefox/downloads/file/4624137/tampermonkey-5.4.1.xpi"
+load_dotenv()
 
 
 @dataclass
@@ -120,57 +122,153 @@ class GoogleMapsScraper:
     self.camoufox = None
 
   def start(self):
-    """Start Camoufox browser."""
+    """Start Camoufox browser with persistent profile."""
     from camoufox.sync_api import Camoufox
 
     print("Starting Camoufox...")
 
-    # Load saved profile state if exists
-    storage_state = None
-    if self.profile_path and (self.profile_path / "state.json").exists():
-      try:
-        import json
+    # Ensure profile directory exists
+    if self.profile_path:
+      self.profile_path.mkdir(parents=True, exist_ok=True)
+      print(f"Using profile: {self.profile_path.absolute()}")
 
-        storage_state = json.loads((self.profile_path / "state.json").read_text())
-        print("Loaded saved profile")
-      except Exception as e:
-        print(f"Could not load profile: {e}")
-
-    # Start Camoufox with addons (use absolute paths for local addons)
+    # Start Camoufox with addons
     import os
 
     addon_paths = [
       os.path.abspath("extensions/tampermonkey-5.4.1"),
     ]
-    self.camoufox = Camoufox(
-      addons=addon_paths,
-      headless=self.headless,
-      humanize=True,
-      os=["macos", "windows", "linux"],
-    )
 
-    self.browser = self.camoufox.__enter__()
-
-    # Create browser context
-    context_kwargs = {
-      "viewport": {"width": 1920, "height": 1080},
-      "device_scale_factor": 1,
-      "locale": "en-US",
-      "timezone_id": "America/New_York",
-      "permissions": ["geolocation"],
+    # Build Camoufox kwargs
+    camoufox_kwargs = {
+      "addons": addon_paths,
+      "headless": self.headless,
+      "humanize": True,
+      "os": ["macos", "windows", "linux"],
     }
 
-    if storage_state:
-      context_kwargs["storage_state"] = storage_state
+    # Use persistent context if profile path is specified
+    if self.profile_path:
+      camoufox_kwargs["persistent_context"] = True
+      camoufox_kwargs["user_data_dir"] = str(self.profile_path.absolute())
 
-    self.context = self.browser.new_context(**context_kwargs)
-    self.page = self.context.new_page()
+      # With persistent context, we get context directly
+      self.camoufox = Camoufox(**camoufox_kwargs)
+      self.context = self.camoufox.__enter__()
+      self.browser = None  # No separate browser in persistent mode
+
+      # Reuse existing page or create new one if none exist
+      existing_pages = self.context.pages
+      if existing_pages:
+        self.page = existing_pages[0]
+        # Close extra pages if any
+        for page in existing_pages[1:]:
+          try:
+            page.close()
+          except:
+            pass
+      else:
+        self.page = self.context.new_page()
+    else:
+      # Normal mode - get browser first
+      self.camoufox = Camoufox(**camoufox_kwargs)
+      self.browser = self.camoufox.__enter__()
+
+      # Load saved profile state if exists
+      storage_state = None
+      if self.profile_path and (self.profile_path / "state.json").exists():
+        try:
+          import json
+
+          storage_state = json.loads((self.profile_path / "state.json").read_text())
+          print("Loaded saved session state")
+        except Exception as e:
+          print(f"Could not load session state: {e}")
+
+      # Create browser context
+      context_kwargs = {
+        "viewport": {"width": 1920, "height": 1080},
+        "device_scale_factor": 1,
+        "locale": "en-US",
+        "timezone_id": "America/New_York",
+        "permissions": ["geolocation"],
+      }
+
+      if storage_state:
+        context_kwargs["storage_state"] = storage_state
+
+      self.context = self.browser.new_context(**context_kwargs)
+      self.page = self.context.new_page()
 
     # Set timeouts
     self.page.set_default_navigation_timeout(60000)
     self.page.set_default_timeout(30000)
 
     print("✓ Browser ready!")
+
+  def configure_tampermonkey(self):
+    """Open Tampermonkey dashboard and wait for configuration."""
+    import os
+    import re
+
+    # Check if we should skip configuration
+    if os.environ.get("SKIP_TM_CONFIG"):
+      print("Skipping Tampermonkey configuration (SKIP_TM_CONFIG set)")
+      return
+
+    print("\n🔄 Opening Tampermonkey preferences...")
+
+    # Find extension ID from profile directory
+    profile_dir = self.profile_path or Path("./camoufox_profile")
+    ext_id = None
+
+    if profile_dir.exists():
+      for json_file in profile_dir.rglob("*.json"):
+        try:
+          with open(json_file, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+            matches = re.findall(r"moz-extension://([0-9a-f-]+)", content)
+            for match in matches:
+              test_dir = profile_dir / "storage" / "default" / f"moz-extension+++{match}"
+              if test_dir.exists() or "tampermonkey" in content.lower():
+                ext_id = match
+                break
+          if ext_id:
+            break
+        except:
+          continue
+
+    # Fallback to common ID
+    if not ext_id:
+      ext_id = os.environ.get("EXT_ID")
+
+    # Navigate to blank page first (helps extensions initialize)
+    self.page.goto("about:blank")
+    time.sleep(2)
+
+    # Open Tampermonkey dashboard
+    url = f"moz-extension://{ext_id}/options.html#nav=dashboard"
+
+    try:
+      self.page.goto(url)
+    except Exception as e:
+      print(f"Error occured \n {e}")
+      # Try without hash fragment
+      try:
+        url = f"moz-extension://{ext_id}/options.html"
+        self.page.goto(url, timeout=15000)
+      except Exception:
+        print(f"⚠️  Could not open Tampermonkey automatically")
+        print("   Please click the Tampermonkey icon (🐵) in the toolbar")
+        print("   and select 'Dashboard' to configure it")
+        input("\nPress ENTER when ready to continue to scraper... ")
+        return
+
+    print(f"✓ Opened Tampermonkey dashboard")
+
+    # Wait for user to configure
+    print("\n⚠️  Configure Tampermonkey in the browser window, then...")
+    input("Press ENTER in terminal to continue to scraper... ")
 
   def search(self, query: str, wait_for_results: bool = True) -> bool:
     """Search with human-like behavior."""
@@ -254,17 +352,19 @@ class GoogleMapsScraper:
       return manager.scroll_with_config()
 
   def stop(self):
-    """Stop Camoufox."""
-    if self.context and self.profile_path:
+    """Stop Camoufox and save profile."""
+    # Save session state (only needed for non-persistent mode)
+    if self.context and self.profile_path and not self.browser:
       try:
         import json
 
         self.profile_path.mkdir(parents=True, exist_ok=True)
         storage = self.context.storage_state()
         (self.profile_path / "state.json").write_text(json.dumps(storage, indent=2))
-        print(f"Profile saved: {self.profile_path}")
+
+        print(f"✓ Session state saved to: {self.profile_path / 'state.json'}")
       except Exception as e:
-        print(f"Could not save profile: {e}")
+        print(f"Could not save session state: {e}")
 
     if self.context:
       try:

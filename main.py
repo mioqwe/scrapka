@@ -124,6 +124,9 @@ def run_scraper(args):
   try:
     scraper.start()
 
+    # Configure Tampermonkey before starting
+    scraper.configure_tampermonkey()
+
     # Navigate to Google Maps
     print("\n🔄 Navigating to Google Maps...")
     scraper.page.goto(
