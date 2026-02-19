@@ -141,7 +141,6 @@ class GoogleMapsScraper:
 
     addon_paths = [
       os.path.abspath("extensions/tampermonkey-5.4.1"),
-      os.path.abspath("extensions/ether_metamask-13.14.2"),
     ]
     self.camoufox = Camoufox(
       addons=addon_paths,
